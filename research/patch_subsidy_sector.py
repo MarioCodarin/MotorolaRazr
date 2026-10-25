@@ -8,6 +8,7 @@ require this handset's full-image digest. PDS differs per phone.
   python3 research/patch_subsidy_sector.py
   python3 research/patch_subsidy_sector.py --write
   python3 research/patch_subsidy_sector.py --restore
+  python3 research/patch_subsidy_sector.py --replay-saved
 
 --write and --restore require the phone to already be USB 22b8:6403.
 They do not send AT+MODE=24 and they do not call write_pds_block.
@@ -53,7 +54,13 @@ def load_backup_sector() -> bytes:
     digest = hashlib.sha256(blob).hexdigest()
     log(f'backup sha256 {digest}')
     if len(blob) != 0x2000000:
-        raise SystemExit(f'STOP backup size {len(blob)}')
+        short = ''
+        if len(blob) == 0x2000000 - 512:
+            short = (
+                ' A step of 0x300 stops 512 bytes early.'
+                ' Use end 0xA2000000 and step 0x200.'
+            )
+        raise SystemExit(f'STOP backup size {len(blob)}.{short}')
     if FIRMWARE_ID not in blob:
         raise SystemExit(f'STOP backup has no {FIRMWARE_ID.decode()} ident')
     sector = blob[SECTOR_FILE:SECTOR_FILE + SECTOR_SIZE]
@@ -103,7 +110,9 @@ def parse_read(resp: bytes) -> bytes:
     return bytes(body)
 
 
-def connect_and_program(target: bytes, label: str, allowed: bytes) -> None:
+def connect_and_program(
+    target: bytes, label: str, allowed: bytes, *, force: bool = False,
+) -> None:
     import usb.core
     sys.path.insert(0, str(ROOT / 'tools' / 'FlashTerminal'))
     import FlashTerminal as ft
@@ -163,13 +172,17 @@ def connect_and_program(target: bytes, label: str, allowed: bytes) -> None:
     if live == target:
         log(f'live sector already matches {label}. No ERASE.')
         return
-    if live != allowed:
+    if live != allowed and not force:
         mismatch = next((i for i, (a, b) in enumerate(zip(live, allowed)) if a != b), None)
         where = 'length' if mismatch is None else f'+{mismatch:05X}'
         log(f'STOP live sector is neither the backup nor the patched image ({where}). No ERASE.')
+        log(f'If {LIVE_COPY.name} is the pre-erase sector, run --replay-saved.')
         raise SystemExit(2)
-    LIVE_COPY.write_bytes(live)
-    log(f'saved live sector {LIVE_COPY} sha256 {hashlib.sha256(live).hexdigest()}')
+    if not force:
+        LIVE_COPY.write_bytes(live)
+        log(f'saved live sector {LIVE_COPY} sha256 {hashlib.sha256(live).hexdigest()}')
+    else:
+        log(f'replay keeps {LIVE_COPY.name}. live sha256 {hashlib.sha256(live).hexdigest()}')
 
     def bin_sector(data: bytes, bin_label: str) -> None:
         ft.timeout_write = 30000
@@ -260,6 +273,10 @@ def main() -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--write', action='store_true', help='program e0 07. phone must be 22b8:6403')
     group.add_argument('--restore', action='store_true', help='program the backup sector. phone must be 22b8:6403')
+    group.add_argument(
+        '--replay-saved', action='store_true',
+        help='program diagnostics/sector_a0840000_before.bin. phone must be 22b8:6403',
+    )
     args = parser.parse_args()
     original = load_backup_sector()
     patched = build_patch(original)
@@ -267,8 +284,20 @@ def main() -> None:
     log(f'patched sector sha256 {patched_digest}')
     if patched_digest != PATCHED_SECTOR_SHA256:
         raise SystemExit('STOP patched sector hash drifted')
-    if not args.write and not args.restore:
+    if not args.write and not args.restore and not args.replay_saved:
         log('local check only. no USB command was sent.')
+        return
+    if args.replay_saved:
+        if not LIVE_COPY.is_file():
+            raise SystemExit(f'STOP missing {LIVE_COPY}')
+        saved = LIVE_COPY.read_bytes()
+        if saved == original:
+            label = 'replay original'
+        elif saved == patched:
+            label = 'replay patch'
+        else:
+            raise SystemExit('STOP saved sector is neither the backup nor the patched image')
+        connect_and_program(saved, label, saved, force=True)
         return
     if args.write:
         if original[PATCH_INDEX:PATCH_INDEX + 2] != b'\xd0\x07':

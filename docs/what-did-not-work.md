@@ -1,14 +1,13 @@
 # What did not unlock it
 
-The working change is the code halfword in [guide.md](guide.md). The PDS trials below are kept so they are not repeated. The scripts that perform them exit unless `V3XX_ALLOW_PDS_WRITE=1`. `research/restore_pds_backup.py` is the rescue path and is not gated. The dated log is [research/README.md](../research/README.md).
+The working change is the code halfword in [guide.md](guide.md). The PDS trials below are kept so they are not repeated. The scripts that perform them exit unless `V3XX_ALLOW_PDS_WRITE=1`. `research/restore_pds_backup.py` writes the backed-up PDS block once the phone is already `22b8:6403`. It does not send `AT+MODE=24`. The dated log is [research/README.md](../research/README.md).
 
 ## PDS plaintext
 
-Five live edits of the subsidy records, each written through the phone's own SEEM encrypt path and then restarted:
+The original `01C3` / `01C4` bytes 3–4 are `08 08`, and that state stayed locked. Five later edits, each written through the phone's own SEEM encrypt path and then restarted:
 
 | Plaintext | Result |
 | --- | --- |
-| `01C3` / `01C4` bytes 3–4 left at `08 08` | Stayed locked. |
 | `01C3` / `01C4` bytes 3–4 set to `00 00` | Booted. Stayed locked. |
 | `01C3` / `01C4` bytes 3–4 set to `FF FF` | Bootloop. Restored from the NOR backup after a flash-key hold. |
 | `01C3` / `01C4` byte 4 only, `08 00` | Enumerated, then bootlooped. Restored the same way. |
