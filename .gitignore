@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# NOR images, SEEM dumps, and the IMEI. They contain device identifiers.
+diagnostics/*
+!diagnostics/README.md
+
+# Carrier request with name, tax id, address, phone, and IMEI.
+richiesta_sblocco_windtre.md
+Richiesta_Sblocco_WindTre.pdf
+Richiesta_Sblocco_WindTre.txt
+p2k-core.history
+
+# Upstream checkouts with their own git history.
+tools/

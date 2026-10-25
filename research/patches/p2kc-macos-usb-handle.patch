@@ -1,0 +1,93 @@
+diff --git a/p2k-core/p2k-core.cpp b/p2k-core/p2k-core.cpp
+index 288a6e2..952399c 100644
+--- a/p2k-core/p2k-core.cpp
++++ b/p2k-core/p2k-core.cpp
+@@ -25,6 +25,7 @@
+ #include <string.h>
+ #include <unistd.h>
+ #include <inttypes.h>
++#include <ctype.h>
+ #include <readline/readline.h>
+ #include <readline/history.h>
+ #include <termios.h>
+@@ -195,7 +196,7 @@ usb_dev_handle *open_dev(char *tmp)
+ 		if (Vid!=0) { if (dev->descriptor.idVendor!=Vid) continue; }
+ 			// get i/f details
+ 			curr_dev=usb_open(dev);
+-			if (curr_dev>0) {
++			if (curr_dev!=0) {
+ 				i = 1;
+ 				//i=usb_fetch_and_parse_descriptors(curr_dev);
+ 				if (i>0) {
+@@ -697,7 +698,7 @@ usb_dev_handle *P2k_Connect (usb_dev_handle *hdev)
+ 	FILE *pFile;
+ 	
+ 	//if (hdev!=0) return hdev; // already connected
+-	if (hdev>0) usb_close(hdev);
++	if (hdev!=0) usb_close(hdev);
+ 	hdev=NULL;
+ 	// check if already in USBLAN mode
+ 	fprintf(stderr," Search for Motorola USBLAN Interface.\n");
+@@ -856,7 +857,7 @@ usb_dev_handle *P2k_ConnectLAN (usb_dev_handle *hdev)
+ 	char s[256];
+ 	FILE *pFile;
+ 	//if (hdev!=0) return hdev; // already connected
+-	if (hdev>0) usb_close(hdev);
++	if (hdev!=0) usb_close(hdev);
+ 	hdev=NULL;
+ 	fprintf(stderr," Search for Motorola USBLAN device.\n");
+ 	hdev=Find_USBLAN_device();
+@@ -1747,7 +1748,7 @@ mode    changing phone state\n \
+ 			case 1:
+ 				fprintf(stderr,"Bye...\n");
+ 				write_history("p2k-core.history");  
+-				if (hdev>0) { 
++				if (hdev!=0) { 
+ 					//usb_release_interface(hdev, 1);
+ 					usb_close(hdev);
+ 					if (bufFileList!=0) free(bufFileList);
+@@ -1759,7 +1760,7 @@ mode    changing phone state\n \
+ 			case 3:
+ 				//hdev=Find_TC_device();
+ 				if (hdev==0) { usb_find_devices(); hdev=P2k_Connect(hdev); }
+-				if (hdev>0) {
++				if (hdev!=0) {
+ 					// Phone model ???
+ 					ret=P2k_ReadSeem(hdev,0x117,1,0,0,Recbuf);
+ 					i=0x10;j=0;
+@@ -1803,7 +1804,7 @@ mode    changing phone state\n \
+ 				i=sscanf(cmd,"seem %s",ArgCmd);
+ 				if (i!=1) { fprintf(stderr,helpseem); break;}
+ 				if (hdev==0) { usb_find_devices(); hdev=P2k_Connect(hdev); }
+-				if (hdev>0) {
++				if (hdev!=0) {
+ 					sscanf(cmd,"seem %s %s %s %s",ArgCmd,tmp1,tmp2,tmp3);
+ 					switch (ArgCmd[0]) {
+ 						case 'd': 
+@@ -1826,7 +1827,7 @@ mode    changing phone state\n \
+ 				i=sscanf(cmd,"file %s",ArgCmd);
+ 				if (i!=1) { fprintf(stderr,helpfile); break;}
+ 				if (hdev==0) { usb_find_devices(); hdev=P2k_Connect(hdev); }
+-				if (hdev>0) {
++				if (hdev!=0) {
+ 					j=sscanf(cmd,"file %s %s %s",ArgCmd,tmp1,tmp2);
+ 					switch (ArgCmd[0]) {
+ 						case 'd':
+@@ -2016,7 +2017,7 @@ mode    changing phone state\n \
+ 				i=sscanf(cmd,"fold %s",ArgCmd);
+ 				if (i!=1) { fprintf(stderr,helpfold); break;}
+ 				if (hdev==0) { usb_find_devices(); hdev=P2k_Connect(hdev); }
+-				if (hdev>0) {
++				if (hdev!=0) {
+ 					sscanf(cmd,"fold %s %s",ArgCmd,tmp1);
+ 					switch (ArgCmd[0]) {
+ 						case 'c':
+@@ -2040,7 +2041,7 @@ mode    changing phone state\n \
+ 			case 7:
+ 				// read args
+ 				if (hdev==0) { usb_find_devices(); hdev=P2k_Connect(hdev); }
+-				if (hdev>0) {
++				if (hdev!=0) {
+ 					i=sscanf(cmd,"mode %s %s",ArgCmd,LANcommand);
+ 					if (i<1) { fprintf(stderr,helpmode); break;}
+ 					switch (ArgCmd[0]) {

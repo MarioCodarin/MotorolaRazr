@@ -1,0 +1,180 @@
+diff --git a/hitagi_argon.c b/hitagi_argon.c
+index 5188d91..ed7fb83 100644
+--- a/hitagi_argon.c
++++ b/hitagi_argon.c
+@@ -378,10 +378,34 @@ static void __attribute__((naked, noinline, used, section(".startup.cache"))) ar
+ 	);
+ }
+ 
++static void __attribute__((used, noinline)) scc_smn_bringup(void) {
++	volatile u32 *smn;
++	u32 state;
++	u32 i;
++
++	smn = (volatile u32 *) 0x53FAD000u;
++	state = smn[0] & 0x1Fu;
++	if (state == 0x6u) {
++		smn[2] = 0xaaaau;
++		smn[3] = 0x5555u;
++		smn[4] = 0x5555u;
++		for (i = 0; i < 100000u; i++) {
++			state = smn[0] & 0x1Fu;
++			if ((state == 0xAu) || (state == 0xCu)) {
++				break;
++			}
++		}
++	}
++	smn[1] = 0xAu;
++}
++
+ void __attribute__((naked, section(".startup.entry"))) _start(void) {
+ 	asm volatile (
+ 		"mov r0, #0x40000015\n"
+ 		"mcr p15, 0, r0, c15, c2, 4\n"
++		"msr cpsr_c, #0xdf\n"
++		"ldr sp, =0x81fffe00\n"
++		"bl scc_smn_bringup\n"
+ 		"mrc p15, 0, r0, c1, c0, 0\n"
+ 		"orr r0, r0, #0x00000002\n"
+ 		"orr r0, r0, #0x00400000\n"
+diff --git a/hitagi_argon_protocol.c b/hitagi_argon_protocol.c
+index 09d6315..4ee47f0 100644
+--- a/hitagi_argon_protocol.c
++++ b/hitagi_argon_protocol.c
+@@ -19,6 +19,7 @@ static void hitagi_command_RQSW(const u8 *answer_str, const u8 *data_ptr, const
+ static void hitagi_command_RQSN(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte);
+ static void hitagi_command_RQFI(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte);
+ static void hitagi_command_READ_OTP(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte);
++static void hitagi_command_SCCRUN(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte);
+ static void hitagi_command_RESTART(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte);
+ static void hitagi_command_POWER_DOWN(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte);
+ static void hitagi_argon_send_packet_aux(const u8 *cmd, const u8 *data, u16 bin_size);
+@@ -42,6 +43,7 @@ const HITAGI_CMD_TABLE_T hitagi_cmd_tbl[] = {
+ 	{ (const u8 *) "RQSN",       (const u8 *) "RSSN",       hitagi_command_RQSN        },
+ 	{ (const u8 *) "RQFI",       (const u8 *) "RSFI",       hitagi_command_RQFI        },
+ 	{ (const u8 *) "READ_OTP",   (const u8 *) "READ_OTP",   hitagi_command_READ_OTP    },
++	{ (const u8 *) "SCCRUN",     (const u8 *) NULL,         hitagi_command_SCCRUN      },
+ 	{ (const u8 *) "RESTART",    (const u8 *) NULL,         hitagi_command_RESTART     },
+ 	{ (const u8 *) "POWER_DOWN", (const u8 *) NULL,         hitagi_command_POWER_DOWN  },
+ };
+@@ -298,6 +300,120 @@ static void hitagi_command_READ_OTP(const u8 *answer_str, const u8 *data_ptr, co
+ 	hitagi_send_packet(answer_str, response);
+ }
+ 
++#define SCC_BASE                 0x53FAC000u
++#define SCC_PARAM                0x8001F000u
++#define SCC_RED_OFF              0x500u
++#define SCC_BLACK_OFF            0x900u
++#define SCC_SMN_STATUS           0x400u
++#define SCC_SMN_COMMAND          0x401u
++#define SCC_SMN_SEQ_START        0x402u
++#define SCC_SMN_SEQ_END          0x403u
++#define SCC_SMN_SEQ_CHECK        0x404u
++#define SCC_STATUS_BUSY          0x00000001u
++#define SCC_STATUS_ZEROIZING     0x00000002u
++#define SCC_STATUS_SMN_BLOCKED   0x00000008u
++#define SCC_STATUS_DONE          0x00000400u
++#define SCC_SMN_HEALTH           0x6u
++#define SCC_SMN_STATE_MASK       0x1Fu
++#define SCC_MAX_BYTES            0xC0u
++#define SCC_POLL_LIMIT           2000000u
++
++static void hitagi_command_SCCRUN(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte) {
++	volatile u32 *scc;
++	volatile u32 *param;
++	volatile u32 *red;
++	volatile u32 *black;
++	u32 mode;
++	u32 nbytes;
++	u32 nwords;
++	u32 i;
++	u32 t;
++	u32 status;
++	u32 smn;
++
++	UNUSED(answer_str);
++	UNUSED(data_ptr);
++	UNUSED(buffer_next_byte);
++
++	scc = (volatile u32 *) SCC_BASE;
++	param = (volatile u32 *) SCC_PARAM;
++	red = (volatile u32 *) (SCC_BASE + SCC_RED_OFF);
++	black = (volatile u32 *) (SCC_BASE + SCC_BLACK_OFF);
++
++	mode = param[0];
++	nbytes = param[1];
++	if (((mode != 6u) && (mode != 7u)) ||
++	    (nbytes == 0u) || (nbytes > SCC_MAX_BYTES) || ((nbytes & 7u) != 0u)) {
++		hitagi_send_error(ERR_DATA_INVALID);
++		return;
++	}
++
++	for (t = 0; t < SCC_POLL_LIMIT; t++) {
++		status = scc[4];
++		if ((status & (SCC_STATUS_BUSY | SCC_STATUS_ZEROIZING)) == 0u) {
++			break;
++		}
++	}
++
++	smn = scc[SCC_SMN_STATUS] & SCC_SMN_STATE_MASK;
++	if (smn == SCC_SMN_HEALTH) {
++		scc[SCC_SMN_SEQ_START] = 0xaaaau;
++		scc[SCC_SMN_SEQ_END] = 0x5555u;
++		scc[SCC_SMN_SEQ_CHECK] = 0x5555u;
++		smn = scc[SCC_SMN_STATUS] & SCC_SMN_STATE_MASK;
++	}
++	scc[SCC_SMN_COMMAND] = 0xau;
++
++	nwords = nbytes / 4u;
++	scc[0] = 0x20u;
++	scc[1] = 0x20u;
++	scc[8] = param[2];
++	scc[9] = param[3];
++
++	if (mode == 6u) {
++		for (i = 0; i < nwords; i++) {
++			red[i] = param[4u + i];
++		}
++	} else {
++		for (i = 0; i < nwords; i++) {
++			black[i] = param[4u + i];
++		}
++	}
++
++	scc[6] = 0x3u;
++	scc[5] = 0;
++	scc[2] = (nbytes / 8u) - 1u;
++	scc[3] = mode;
++
++	status = 0;
++	for (t = 0; t < SCC_POLL_LIMIT; t++) {
++		status = scc[4];
++		if ((status & SCC_STATUS_DONE) != 0u) {
++			break;
++		}
++		if (((status & SCC_STATUS_BUSY) == 0u) && (t > 1000u)) {
++			break;
++		}
++	}
++
++	if (mode == 6u) {
++		for (i = 0; i < nwords; i++) {
++			param[4u + i] = black[i];
++		}
++	} else {
++		for (i = 0; i < nwords; i++) {
++			param[4u + i] = red[i];
++		}
++	}
++
++	param[0] = status;
++	param[1] = scc[5];
++	param[2] = (t << 8) | smn;
++	param[3] = scc[SCC_SMN_STATUS];
++
++	hitagi_send_ack(NULL);
++}
++
+ static void hitagi_command_RESTART(const u8 *answer_str, const u8 *data_ptr, const u8 *buffer_next_byte) {
+ 	UNUSED(answer_str);
+ 	UNUSED(data_ptr);

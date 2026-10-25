@@ -1,0 +1,14 @@
+The Python and the docs in this repository are under the MIT license in LICENSE.
+
+They are not the phone tools.
+
+- Hitagi, MIT, MotoFanRu branch argon at d6ebbeca0d2712bf76e85f69721c018ec4b72b5a.
+  Not vendored. research/patches/hitagi-scc.patch is an optional local delta.
+  The sector write did not send the command that patch adds.
+- FlashTerminal, MIT, EXL master at 8ae1de7af6bc342dfa204675a3428ca9266972c2.
+  Not vendored. The patch script imports it from tools/FlashTerminal when a
+  write or restore is actually run.
+- p2kc, GPL-2, pulkomandy master at 3aa4747e7b7a0866a53a77798c9a682ee20bcfef.
+  Not vendored. research/patches/p2kc-macos-usb-handle.patch is the only
+  p2kc text shipped here. The unlock does not run p2kc. The GPL program is
+  not combined into the Python.
